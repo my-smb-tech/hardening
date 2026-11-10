@@ -23,44 +23,34 @@ find ./ -name '*.log' -exec rm {} \;
 vagrant box update --insecure
 vagrant destroy --force
 
-for d in $(grep config.vm.define Vagrantfile | grep -o '".*"' | tr -d '"');
-  do rm -v "/tmp/${d}_disk01.vdi"
-done
-
-grep config.vm.define Vagrantfile | grep -v '^#' | grep -o '".*"' | tr -d '"' |\
+grep -o 'name:.*box:' Vagrantfile | grep -o '".*"' | tr -d '"' |\
   while read -r v; do
     vagrant up "${v}"
 done
 
-wait
-
-grep config.vm.define Vagrantfile | grep -v '^#' | grep -o '".*"' | tr -d '"' |\
-  while read -r v; do
-    vagrant reload "${v}"
-done
-
-wait
-
 for VM in $(vagrant status | grep -iE 'running.*virtualbox' | awk '{print $1}'); do
   vagrant ssh "${VM}" -c 'cp /vagrant/checkScore.sh ~/'
+  vagrant ssh "${VM}" -c 'cp /vagrant/misc/genOSCAPreport.sh ~/'
   vagrant ssh "${VM}" -c 'sudo apt-get -y update && sudo apt-get -y install bats net-tools shellcheck --no-install-recommends'
-  vagrant ssh "${VM}" -c 'cp -R /vagrant ~/hardening && sed -i.bak -e "s/^AUTOFILL=.*/AUTOFILL='\''Y'\''/" -e "s/^CHANGEME=.*/CHANGEME='\''changed'\''/" ~/hardening/ubuntu.cfg && cd ~/hardening && sudo bash ubuntu.sh && sudo reboot'
+  vagrant ssh "${VM}" -c 'cp -R /vagrant ~/hardening && sed -i.bak -e "s/^AUTOFILL=.*/AUTOFILL='\''Y'\''/" -e "s/^CHANGEME=.*/CHANGEME='\''changed'\''/" ~/hardening/ubuntu.cfg && cd ~/hardening && sudo bash ubuntu.sh && sudo shutdown -h now'
 done
 
-wait
+grep -o 'name:.*box:' Vagrantfile | grep -o '".*"' | tr -d '"' |\
+  while read -r v; do
+    vagrant up --provision "${v}"
+done
 
 for VM in $(vagrant status | grep -iE 'running.*virtualbox' | awk '{print $1}'); do
   while ! vagrant ssh "$VM" -c 'id'; do
     echo "Waiting for $VM."
     sleep 10
   done
+  vagrant ssh "${VM}" -c 'bash ~/genOSCAPreport.sh'
   vagrant ssh "${VM}" -c 'cd ~/hardening/tests && sudo bats . >> ~/bats.log'
-  wait
   vagrant ssh "${VM}" -c 'cat ~/bats.log' | grep 'not ok'  > "hardening-$VM-$(date +%y%m%d)-bats.log"
   vagrant ssh "${VM}" -c 'sh ~/checkScore.sh || exit 1 && cat ~/lynis-report.dat' > "hardening-$VM-$(date +%y%m%d)-lynis.log"
+  vagrant scp "${VM}:*.html" "."
 done
-
-wait
 
 {
   TESTS="$(grep -Ro '@test' tests/*.bats | wc -l)"
@@ -78,9 +68,6 @@ wait
   vagrant --version
   echo "VirtualBox $(vboxmanage --version)"
 
-  for box in $(grep 'vm.box' Vagrantfile | grep -o '".*"$' | tr -d '"'); do
-    vagrant box list | grep -i "${box}" | tail -n1 | sed 's/64.*(/86 \(/g'
-  done
   echo "----"
 
   # Modified VMs

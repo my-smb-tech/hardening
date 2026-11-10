@@ -1,27 +1,26 @@
 Vagrant.configure("2") do |config|
-  config.vbguest.installer_options = { allow_kernel_upgrade: true }
-  config.vm.provider "virtualbox" do |v|
-    v.default_nic_type = "Am79C973"
-    v.memory = 2048
-    v.cpus = 2
-    v.customize ["modifyvm", :id, "--uart1", "0x3F8", "4"]
-    v.customize ["modifyvm", :id, "--uartmode1", "file", File::NULL]
+  config.vbguest.installer_options = { allow_kernel_upgrade: false }
+  config.vbguest.auto_update = false
+  config.vm.provider "virtualbox" do |vb|
+    vb.customize ["modifyvm", :id, "--cableconnected1", "on"]
+    vb.customize ["modifyvm", :id, "--uart1", "0x3F8", "4"]
+    vb.customize ["modifyvm", :id, "--uartmode1", "file", File::NULL]
+    vb.memory = "2048"
   end
 
-  config.vm.define "focal" do |focal|
-    focal.ssh.extra_args = ["-o","ConnectTimeout=600"]
-    focal.ssh.insert_key = true
-    focal.vm.boot_timeout = 600
-    focal.vm.box = "ubuntu/focal64"
-    focal.vm.hostname = "focal"
-  end
+  hosts = [
+    { name: "jammy", box: "bento/ubuntu-22.04" },
+    { name: "noble", box: "bento/ubuntu-24.04" },
+    { name: "resolute", box: "konstruktoid/ubuntu-26.04" },
+  ]
 
-  config.vm.define "jammy" do |jammy|
-    jammy.ssh.extra_args = ["-o","ConnectTimeout=600"]
-    jammy.ssh.insert_key = true
-    jammy.vm.boot_timeout = 600
-    jammy.vm.box = "jammy/20220204"
-    jammy.vm.box_url = "https://cloud-images.ubuntu.com/jammy/20220204/jammy-server-cloudimg-amd64-vagrant.box"
-    jammy.vm.hostname = "jammy"
+  hosts.each do |host|
+    config.vm.define host[:name] do |node|
+      node.vm.box = host[:box]
+      node.ssh.insert_key = true
+      node.ssh.key_type = "ed25519"
+      node.vm.hostname = host[:name]
+      node.vm.boot_timeout = 600
+    end
   end
 end
